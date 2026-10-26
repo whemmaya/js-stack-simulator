@@ -2,23 +2,116 @@ import React, { useEffect, useState } from 'react';
 import {
   AlertCircle,
   ArrowLeftRight,
+  Bookmark,
   Box,
+  ChevronDown,
+  ChevronUp,
   Cylinder,
+  Plus,
+  RotateCcw,
+  Save,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 import {
   ArrangementConfig,
   BackgroundStyle,
   ColorTheme,
   ContainerSpec,
+  ItemShape,
   ItemSpec,
   PackingMode,
   PackingSummary,
-  QUICK_PRESETS,
   QuickPreset,
   StackingPattern,
   ViewerConfig,
 } from '../types/packing';
+
+interface SavedItemDimensionPreset {
+  id: string;
+  name: string;
+  shape: ItemShape;
+  width: number;
+  depth: number;
+  diameter: number;
+  height: number;
+  weight: number;
+}
+
+const SAVED_ITEM_PRESETS_KEY = 'js_stack_custom_item_presets_v1';
+
+const DEFAULT_SAVED_ITEM_PRESETS: SavedItemDimensionPreset[] = [
+  {
+    id: 'default-box-1',
+    name: '표준 수출용 카톤',
+    shape: 'box',
+    width: 550,
+    depth: 275,
+    diameter: 275,
+    height: 185,
+    weight: 8.5,
+  },
+  {
+    id: 'default-box-2',
+    name: 'T11 정합 모듈 박스',
+    shape: 'box',
+    width: 366,
+    depth: 275,
+    diameter: 275,
+    height: 210,
+    weight: 6.0,
+  },
+  {
+    id: 'default-box-3',
+    name: '우체국 택배 3호',
+    shape: 'box',
+    width: 340,
+    depth: 250,
+    diameter: 250,
+    height: 210,
+    weight: 5.0,
+  },
+  {
+    id: 'default-box-4',
+    name: '표준 물류 모듈',
+    shape: 'box',
+    width: 400,
+    depth: 300,
+    diameter: 300,
+    height: 250,
+    weight: 7.5,
+  },
+  {
+    id: 'default-cyl-1',
+    name: '원통 스틸 캔 (Ø100)',
+    shape: 'cylinder',
+    width: 100,
+    depth: 100,
+    diameter: 100,
+    height: 140,
+    weight: 0.85,
+  },
+  {
+    id: 'default-cyl-2',
+    name: '355ml 표준 음료캔',
+    shape: 'cylinder',
+    width: 66,
+    depth: 66,
+    diameter: 66,
+    height: 122,
+    weight: 0.37,
+  },
+  {
+    id: 'default-cyl-3',
+    name: '원통 보틀 용기 (Ø85)',
+    shape: 'cylinder',
+    width: 85,
+    depth: 85,
+    diameter: 85,
+    height: 180,
+    weight: 0.65,
+  },
+];
 
 interface FreeNumberInputProps {
   value: number;
@@ -155,13 +248,11 @@ interface ConfigSidebarProps {
 
 export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
   mode,
-  activePresetId,
   item,
   container,
   arrangement,
   viewer,
   summary,
-  onSelectPreset,
   onUpdateMode,
   onUpdateItem,
   onUpdateContainer,
@@ -172,6 +263,106 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'item' | 'arrangement' | 'container' | 'style'>('item');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
+
+  // Pop-down state & persisted custom item presets (localStorage)
+  const [isItemPresetsOpen, setIsItemPresetsOpen] = useState(false);
+  const [presetEntryMode, setPresetEntryMode] = useState<'current' | 'manual'>('current');
+  const [savedItemPresets, setSavedItemPresets] = useState<SavedItemDimensionPreset[]>(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_ITEM_PRESETS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return DEFAULT_SAVED_ITEM_PRESETS;
+  });
+
+  // Form states for pre-entering / saving a new item preset
+  const [newPresetName, setNewPresetName] = useState('');
+  const [manualShape, setManualShape] = useState<ItemShape>(item.shape);
+  const [manualWidth, setManualWidth] = useState<string>(String(item.width));
+  const [manualDepth, setManualDepth] = useState<string>(String(item.depth));
+  const [manualDiameter, setManualDiameter] = useState<string>(String(item.diameter));
+  const [manualHeight, setManualHeight] = useState<string>(String(item.height));
+  const [manualWeight, setManualWeight] = useState<string>(String(item.weight));
+  const [presetSaveMsg, setPresetSaveMsg] = useState<string | null>(null);
+
+  const persistItemPresets = (nextList: SavedItemDimensionPreset[]) => {
+    setSavedItemPresets(nextList);
+    try {
+      localStorage.setItem(SAVED_ITEM_PRESETS_KEY, JSON.stringify(nextList));
+    } catch {
+      // ignore storage quota errors
+    }
+  };
+
+  const handleSaveCurrentItemAsPreset = () => {
+    const trimmedName =
+      newPresetName.trim() ||
+      (item.shape === 'box'
+        ? `상자 ${item.width}×${item.depth}×${item.height}`
+        : `원통 Ø${item.diameter}×${item.height}`);
+
+    const newEntry: SavedItemDimensionPreset = {
+      id: `custom-${Date.now()}`,
+      name: trimmedName,
+      shape: item.shape,
+      width: item.width,
+      depth: item.depth,
+      diameter: item.diameter,
+      height: item.height,
+      weight: item.weight,
+    };
+
+    persistItemPresets([newEntry, ...savedItemPresets]);
+    setNewPresetName('');
+    setPresetSaveMsg(`'${trimmedName}' 규격이 저장되었습니다.`);
+    window.setTimeout(() => setPresetSaveMsg(null), 2500);
+  };
+
+  const handleSaveManualItemPreset = () => {
+    const w = Math.max(10, Math.min(3000, Number(manualWidth) || 300));
+    const d = Math.max(10, Math.min(3000, Number(manualDepth) || 200));
+    const dia = Math.max(10, Math.min(2000, Number(manualDiameter) || 100));
+    const h = Math.max(10, Math.min(3000, Number(manualHeight) || 150));
+    const wt = Math.max(0.01, Math.min(1000, Number(manualWeight) || 1.0));
+
+    const trimmedName =
+      newPresetName.trim() ||
+      (manualShape === 'box' ? `상자 ${w}×${d}×${h}` : `원통 Ø${dia}×${h}`);
+
+    const newEntry: SavedItemDimensionPreset = {
+      id: `custom-${Date.now()}`,
+      name: trimmedName,
+      shape: manualShape,
+      width: manualShape === 'box' ? w : dia,
+      depth: manualShape === 'box' ? d : dia,
+      diameter: manualShape === 'cylinder' ? dia : Math.min(w, d),
+      height: h,
+      weight: wt,
+    };
+
+    persistItemPresets([newEntry, ...savedItemPresets]);
+    setNewPresetName('');
+    setPresetSaveMsg(`'${trimmedName}' 규격이 미리 저장되었습니다.`);
+    window.setTimeout(() => setPresetSaveMsg(null), 2500);
+  };
+
+  const handleDeleteSavedPreset = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    persistItemPresets(savedItemPresets.filter((p) => p.id !== id));
+  };
+
+  const handleRestoreDefaultPresets = () => {
+    persistItemPresets(DEFAULT_SAVED_ITEM_PRESETS);
+    setPresetSaveMsg('기본 물품 치수 목록이 복원되었습니다.');
+    window.setTimeout(() => setPresetSaveMsg(null), 2500);
+  };
 
   const setFieldError = (key: string, msg: string | null) => {
     setFieldErrors((prev) => {
@@ -205,50 +396,7 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
 
   return (
     <aside className="w-[400px] shrink-0 h-full bg-slate-900 border-r border-slate-800 flex flex-col overflow-hidden">
-      {/* 1. Quick Preset Selector Strip */}
-      <div className="p-4 border-b border-slate-800 bg-slate-950/50">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-slate-300">
-            빠른 규격 및 첨부 이미지 프리셋
-          </span>
-          <button
-            onClick={onOpenOptimizer}
-            className="flex items-center gap-1 text-xs font-semibold text-blue-400 hover:text-blue-300 transition-colors whitespace-nowrap shrink-0"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>자동 최적 추천</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-1.5 max-h-[136px] overflow-y-auto pr-1">
-          {QUICK_PRESETS.map((preset) => {
-            const isSelected = activePresetId === preset.id;
-            return (
-              <button
-                key={preset.id}
-                onClick={() => {
-                  setFieldErrors({});
-                  onSelectPreset(preset);
-                }}
-                className={`w-full text-left px-3 py-2 rounded-lg border transition-colors flex items-center justify-between gap-2 ${
-                  isSelected
-                    ? 'bg-blue-600/15 border-blue-500/60 text-white'
-                    : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:bg-slate-800/80 hover:text-white'
-                }`}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold truncate">{preset.label}</div>
-                </div>
-                <span className="text-[11px] font-mono text-slate-400 shrink-0">
-                  {preset.badge}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 2. Section Navigation Tabs */}
+      {/* Section Navigation Tabs */}
       <div className="px-4 pt-3 pb-2 border-b border-slate-800 bg-slate-900">
         <div className="grid grid-cols-4 gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800">
           {(
@@ -442,68 +590,309 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
                 </div>
               )}
 
-              {/* Quick item size chips */}
+              {/* Pop-Down: 자주 쓰는 물품 치수 빠른 입력 & 미리 저장 관리 */}
               <div className="pt-1">
-                <span className="block text-[11px] text-slate-400 mb-1.5">
-                  자주 쓰는 물품 치수 빠른 입력
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {item.shape === 'box' ? (
-                    <>
-                      <button
-                        onClick={() => onUpdateItem({ width: 550, depth: 275, height: 185 })}
-                        className="px-2.5 py-1 text-xs font-mono bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-md"
-                      >
-                        550×275×185 (이미지1)
-                      </button>
-                      <button
-                        onClick={() => onUpdateItem({ width: 366, depth: 275, height: 210 })}
-                        className="px-2.5 py-1 text-xs font-mono bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-md"
-                      >
-                        366×275×210 (T11 정합)
-                      </button>
-                      <button
-                        onClick={() => onUpdateItem({ width: 340, depth: 250, height: 210 })}
-                        className="px-2.5 py-1 text-xs font-mono bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-md"
-                      >
-                        340×250×210 (택배3호)
-                      </button>
-                      <button
-                        onClick={() => onUpdateItem({ width: 400, depth: 300, height: 250 })}
-                        className="px-2.5 py-1 text-xs font-mono bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-md"
-                      >
-                        400×300×250 (표준모듈)
-                      </button>
-                    </>
+                <button
+                  type="button"
+                  onClick={() => setIsItemPresetsOpen((prev) => !prev)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-semibold transition-colors ${
+                    isItemPresetsOpen
+                      ? 'bg-blue-600/15 border-blue-500/60 text-blue-200'
+                      : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Bookmark className="w-3.5 h-3.5 text-blue-400" />
+                    <span>자주 쓰는 물품 치수 빠른 입력 · 저장 관리</span>
+                    <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-mono text-slate-300">
+                      {savedItemPresets.length}개 저장됨
+                    </span>
+                  </div>
+                  {isItemPresetsOpen ? (
+                    <ChevronUp className="w-4 h-4 text-slate-400" />
                   ) : (
-                    <>
-                      <button
-                        onClick={() =>
-                          onUpdateItem({ diameter: 100, width: 100, depth: 100, height: 140 })
-                        }
-                        className="px-2.5 py-1 text-xs font-mono bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-md"
-                      >
-                        Ø100×140 (이미지2 캔)
-                      </button>
-                      <button
-                        onClick={() =>
-                          onUpdateItem({ diameter: 66, width: 66, depth: 66, height: 122 })
-                        }
-                        className="px-2.5 py-1 text-xs font-mono bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-md"
-                      >
-                        Ø66×122 (355ml 음료캔)
-                      </button>
-                      <button
-                        onClick={() =>
-                          onUpdateItem({ diameter: 85, width: 85, depth: 85, height: 180 })
-                        }
-                        className="px-2.5 py-1 text-xs font-mono bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-md"
-                      >
-                        Ø85×180 (보틀 용기)
-                      </button>
-                    </>
+                    <ChevronDown className="w-4 h-4 text-slate-400" />
                   )}
-                </div>
+                </button>
+
+                {isItemPresetsOpen && (
+                  <div className="mt-2 p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-3 shadow-xl">
+                    {/* 1. Saved Presets List */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-slate-400">
+                        <span>저장된 물품 규격 목록 (클릭 시 즉시 적용)</span>
+                        <button
+                          type="button"
+                          onClick={handleRestoreDefaultPresets}
+                          className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200 transition-colors"
+                          title="기본 샘플 치수 복원"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>기본값 복원</span>
+                        </button>
+                      </div>
+
+                      <div className="max-h-44 overflow-y-auto space-y-1 pr-1">
+                        {savedItemPresets.map((preset) => {
+                          const isCurrentShape = preset.shape === item.shape;
+                          const dimText =
+                            preset.shape === 'box'
+                              ? `${preset.width}×${preset.depth}×${preset.height}mm`
+                              : `Ø${preset.diameter}×${preset.height}mm`;
+                          return (
+                            <div
+                              key={preset.id}
+                              onClick={() => {
+                                setFieldErrors({});
+                                onUpdateItem({
+                                  name: preset.name,
+                                  shape: preset.shape,
+                                  width: preset.width,
+                                  depth: preset.depth,
+                                  diameter: preset.diameter,
+                                  height: preset.height,
+                                  weight: preset.weight,
+                                });
+                                if (
+                                  preset.shape === 'box' &&
+                                  arrangement.pattern === 'hex'
+                                ) {
+                                  onUpdateArrangement({ pattern: 'block' });
+                                } else if (
+                                  preset.shape === 'cylinder' &&
+                                  (arrangement.pattern === 'pinwheel' ||
+                                    arrangement.pattern === 'brick')
+                                ) {
+                                  onUpdateArrangement({ pattern: 'block' });
+                                }
+                              }}
+                              className={`group flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors ${
+                                isCurrentShape
+                                  ? 'bg-slate-900 hover:bg-blue-600/20 border-slate-800 hover:border-blue-500/50 text-slate-200'
+                                  : 'bg-slate-900/50 hover:bg-slate-800 border-slate-800/60 text-slate-400'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1 flex items-center gap-2">
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${
+                                    preset.shape === 'box'
+                                      ? 'bg-blue-500/15 text-blue-300'
+                                      : 'bg-cyan-500/15 text-cyan-300'
+                                  }`}
+                                >
+                                  {preset.shape === 'box' ? '상자' : '원통'}
+                                </span>
+                                <span className="text-xs font-medium truncate">
+                                  {preset.name}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-[11px] font-mono text-slate-300">
+                                  {dimText}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteSavedPreset(preset.id, e)}
+                                  className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-950/40 transition-colors"
+                                  title="이 저장 규격 삭제"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 2. Save / Pre-enter New Preset Section */}
+                    <div className="pt-2.5 border-t border-slate-800 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-slate-300">
+                          새 물품 치수 저장하기
+                        </span>
+                        <div className="flex items-center gap-1 bg-slate-900 p-0.5 rounded-md border border-slate-800 text-[10px]">
+                          <button
+                            type="button"
+                            onClick={() => setPresetEntryMode('current')}
+                            className={`px-2 py-0.5 rounded transition-colors ${
+                              presetEntryMode === 'current'
+                                ? 'bg-blue-600 text-white font-semibold'
+                                : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            현재 입력값 저장
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPresetEntryMode('manual')}
+                            className={`px-2 py-0.5 rounded transition-colors ${
+                              presetEntryMode === 'manual'
+                                ? 'bg-blue-600 text-white font-semibold'
+                                : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            직접 치수 입력 후 저장
+                          </button>
+                        </div>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={newPresetName}
+                        onChange={(e) => setNewPresetName(e.target.value)}
+                        placeholder="저장할 물품 별칭 입력 (예: 자사 A박스, 500ml 캔)"
+                        className="w-full bg-slate-900 border border-slate-800 focus:border-blue-500 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                      />
+
+                      {presetEntryMode === 'current' ? (
+                        <button
+                          type="button"
+                          onClick={handleSaveCurrentItemAsPreset}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>
+                            현재 치수(
+                            {item.shape === 'box'
+                              ? `${item.width}×${item.depth}×${item.height}mm`
+                              : `Ø${item.diameter}×${item.height}mm`}
+                            )로 저장
+                          </span>
+                        </button>
+                      ) : (
+                        <div className="space-y-2 bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setManualShape('box')}
+                              className={`py-1 rounded text-[11px] font-semibold border ${
+                                manualShape === 'box'
+                                  ? 'bg-blue-600/20 border-blue-500 text-white'
+                                  : 'bg-slate-950 border-slate-800 text-slate-400'
+                              }`}
+                            >
+                              상자 (Box)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setManualShape('cylinder')}
+                              className={`py-1 rounded text-[11px] font-semibold border ${
+                                manualShape === 'cylinder'
+                                  ? 'bg-blue-600/20 border-blue-500 text-white'
+                                  : 'bg-slate-950 border-slate-800 text-slate-400'
+                              }`}
+                            >
+                              원통 (Cylinder)
+                            </button>
+                          </div>
+
+                          {manualShape === 'box' ? (
+                            <div className="grid grid-cols-4 gap-1.5">
+                              <div>
+                                <label className="block text-[10px] text-slate-400 mb-0.5">
+                                  가로(mm)
+                                </label>
+                                <input
+                                  type="number"
+                                  value={manualWidth}
+                                  onChange={(e) => setManualWidth(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-xs font-mono text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-400 mb-0.5">
+                                  세로(mm)
+                                </label>
+                                <input
+                                  type="number"
+                                  value={manualDepth}
+                                  onChange={(e) => setManualDepth(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-xs font-mono text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-400 mb-0.5">
+                                  높이(mm)
+                                </label>
+                                <input
+                                  type="number"
+                                  value={manualHeight}
+                                  onChange={(e) => setManualHeight(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-xs font-mono text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-400 mb-0.5">
+                                  중량(kg)
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={manualWeight}
+                                  onChange={(e) => setManualWeight(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-xs font-mono text-white"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-3 gap-1.5">
+                              <div>
+                                <label className="block text-[10px] text-slate-400 mb-0.5">
+                                  직경 Ø(mm)
+                                </label>
+                                <input
+                                  type="number"
+                                  value={manualDiameter}
+                                  onChange={(e) => setManualDiameter(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-xs font-mono text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-400 mb-0.5">
+                                  높이(mm)
+                                </label>
+                                <input
+                                  type="number"
+                                  value={manualHeight}
+                                  onChange={(e) => setManualHeight(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-xs font-mono text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-400 mb-0.5">
+                                  중량(kg)
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={manualWeight}
+                                  onChange={(e) => setManualWeight(e.target.value)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-xs font-mono text-white"
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={handleSaveManualItemPreset}
+                            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>입력한 규격 목록에 추가 저장</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {presetSaveMsg && (
+                        <div className="text-[11px] text-emerald-400 font-medium text-center">
+                          {presetSaveMsg}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1490,89 +1879,64 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
             </div>
           </div>
 
-          {/* Quick Inline Container Size Adjuster (Always Accessible from Any Tab) */}
+          {/* Read-Only Container vs Calculated Size & Margin Summary (Inputs consolidated in Tab 3) */}
           <div className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 space-y-2">
-            <div className="flex items-center justify-between text-[11px] text-slate-400">
-              <span>{mode === 'pallet' ? '설정 팔레트 크기 (W×D×H)' : '설정 외박스 내경 (W×D×H)'}</span>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-slate-400">
+                {mode === 'pallet' ? '설정 팔레트' : '설정 외박스'}:{' '}
+                <strong className="font-mono text-amber-300">
+                  {summary.effectiveContainerWidth}×{summary.effectiveContainerDepth}×{summary.effectiveContainerHeight}
+                </strong>
+              </span>
               <span className="font-mono text-cyan-400">
-                계산된 크기: {summary.stackWidth}×{summary.stackDepth}×{summary.totalHeight}
+                계산: {summary.stackWidth}×{summary.stackDepth}×{summary.totalHeight}
               </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <FreeNumberInput
-                  label="용기 가로"
-                  unit="mm"
-                  min={30}
-                  max={5000}
-                  value={summary.effectiveContainerWidth}
-                  onValidChange={(v) =>
-                    onUpdateContainer({ width: v, autoFitContainer: false })
-                  }
-                  className="w-full border rounded px-2 py-1 text-xs font-mono text-center focus:outline-none"
-                />
-                <div
-                  className={`text-[10px] font-mono text-center mt-1 ${
+            <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-800/80">
+              <div className="bg-slate-900/80 rounded px-2 py-1 text-center">
+                <span className="block text-[10px] text-slate-500">가로 여유/초과</span>
+                <span
+                  className={`text-xs font-mono font-semibold ${
                     summary.marginX < 0
-                      ? 'text-red-400 font-semibold'
+                      ? 'text-red-400'
                       : summary.marginX > 0
                       ? 'text-emerald-400'
-                      : 'text-slate-400'
+                      : 'text-slate-300'
                   }`}
                 >
-                  가로 {summary.marginX >= 0 ? `+${summary.marginX}` : summary.marginX}mm
-                </div>
+                  {summary.marginX >= 0 ? `+${summary.marginX}` : summary.marginX}mm
+                </span>
               </div>
 
-              <div>
-                <FreeNumberInput
-                  label="용기 세로"
-                  unit="mm"
-                  min={30}
-                  max={5000}
-                  value={summary.effectiveContainerDepth}
-                  onValidChange={(v) =>
-                    onUpdateContainer({ depth: v, autoFitContainer: false })
-                  }
-                  className="w-full border rounded px-2 py-1 text-xs font-mono text-center focus:outline-none"
-                />
-                <div
-                  className={`text-[10px] font-mono text-center mt-1 ${
+              <div className="bg-slate-900/80 rounded px-2 py-1 text-center">
+                <span className="block text-[10px] text-slate-500">세로 여유/초과</span>
+                <span
+                  className={`text-xs font-mono font-semibold ${
                     summary.marginZ < 0
-                      ? 'text-red-400 font-semibold'
+                      ? 'text-red-400'
                       : summary.marginZ > 0
                       ? 'text-emerald-400'
-                      : 'text-slate-400'
+                      : 'text-slate-300'
                   }`}
                 >
-                  세로 {summary.marginZ >= 0 ? `+${summary.marginZ}` : summary.marginZ}mm
-                </div>
+                  {summary.marginZ >= 0 ? `+${summary.marginZ}` : summary.marginZ}mm
+                </span>
               </div>
 
-              <div>
-                <FreeNumberInput
-                  label="용기 높이"
-                  unit="mm"
-                  min={30}
-                  max={5000}
-                  value={summary.effectiveContainerHeight}
-                  onValidChange={(v) =>
-                    onUpdateContainer({ maxHeight: v, autoFitContainer: false })
-                  }
-                  className="w-full border rounded px-2 py-1 text-xs font-mono text-center focus:outline-none"
-                />
-                <div
-                  className={`text-[10px] font-mono text-center mt-1 ${
+              <div className="bg-slate-900/80 rounded px-2 py-1 text-center">
+                <span className="block text-[10px] text-slate-500">높이 여유/초과</span>
+                <span
+                  className={`text-xs font-mono font-semibold ${
                     summary.marginY < 0
-                      ? 'text-red-400 font-semibold'
+                      ? 'text-red-400'
                       : summary.marginY > 0
                       ? 'text-emerald-400'
-                      : 'text-slate-400'
+                      : 'text-slate-300'
                   }`}
                 >
-                  높이 {summary.marginY >= 0 ? `+${summary.marginY}` : summary.marginY}mm
-                </div>
+                  {summary.marginY >= 0 ? `+${summary.marginY}` : summary.marginY}mm
+                </span>
               </div>
             </div>
           </div>

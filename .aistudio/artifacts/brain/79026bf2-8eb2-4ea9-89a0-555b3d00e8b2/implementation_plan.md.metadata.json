@@ -1,0 +1,6 @@
+{
+  "summary":  "3D 패키징 및 팔레타이징 시각화 웹 애플리케이션(Box & Pallet 3D Stacking Visualizer)의 종합 구현 계획서. 박스/원통 물품 입력, 행·열·층 배열, 풍차형/벽돌식 엇갈림 적재 패턴, 규격별 자동 최적 적재 추천 알고리즘, Three.js 기반 대화형 3D 뷰어(치수선, 반투명 외박스, 층별 분해 슬라이더, 캡처) 및 물류 효율성 리포트 아키텍처를 정의합니다.",
+  "updatedAt":  "2026-10-26T03:03:26.224942054Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

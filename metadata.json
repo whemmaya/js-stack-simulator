@@ -1,0 +1,6 @@
+{
+  "name": "JS Stack Simulator",
+  "description": "상자 및 원통형 물품의 크기와 행·열·층 배열, 교차 적재 패턴을 입력하여 외박스 포장 및 팔레트 적재 상태를 3D로 시각화하고 최적 적재율을 계산하는 시뮬레이터",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

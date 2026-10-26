@@ -106,24 +106,35 @@ const isSoftwareGl = (() => {
   }
 })();
 
+type BadgeVariant =
+  | 'neutral-dark'
+  | 'neutral-light'
+  | 'clearance'
+  | 'overhang'
+  | 'custom-size'
+  | 'calculated-size';
+
+interface BadgeRowItem {
+  text: string;
+  variant: BadgeVariant;
+}
+
 /**
- * Creates an ultra-crisp 4x super-sampled 3D sprite with dimension or status text.
- * Disables mipmap downsampling so non-uniformly scaled sprites remain razor-sharp at any resolution.
+ * Creates an ultra-crisp 4x super-sampled 3D sprite stacking 1..N badge pills for a single axis (가로 / 세로 / 높이).
+ * Because all active pills for an axis (설정, 계산, 여유/초과) are rendered into a single stacked texture,
+ * they stay grouped in the same location and are guaranteed never to overlap from any 3D camera angle.
  */
-function createBadgeSprite(
-  text: string,
+function createAxisBadgeStackSprite(
+  rows: BadgeRowItem[],
   maxAnisotropy: number,
-  variant:
-    | 'neutral-dark'
-    | 'neutral-light'
-    | 'clearance'
-    | 'overhang'
-    | 'custom-size'
-    | 'calculated-size'
+  baseWidthWorld: number
 ): THREE.Sprite {
   const dpr = 4;
-  const logicalW = 400;
-  const logicalH = 96;
+  const logicalW = 430;
+  const rowH = 68;
+  const rowGap = 10;
+  const padY = 8;
+  const logicalH = padY * 2 + rows.length * rowH + Math.max(0, rows.length - 1) * rowGap;
 
   const canvas = document.createElement('canvas');
   canvas.width = logicalW * dpr;
@@ -133,56 +144,60 @@ function createBadgeSprite(
 
   ctx.clearRect(0, 0, logicalW, logicalH);
 
-  if (variant === 'clearance') {
-    ctx.fillStyle = 'rgba(6, 78, 59, 0.95)';
-    ctx.strokeStyle = 'rgba(52, 211, 153, 0.95)';
-  } else if (variant === 'overhang') {
-    ctx.fillStyle = 'rgba(127, 29, 29, 0.95)';
-    ctx.strokeStyle = 'rgba(248, 113, 113, 0.95)';
-  } else if (variant === 'custom-size') {
-    ctx.fillStyle = 'rgba(120, 53, 15, 0.95)';
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.95)';
-  } else if (variant === 'calculated-size') {
-    ctx.fillStyle = 'rgba(12, 74, 110, 0.95)';
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.95)';
-  } else if (variant === 'neutral-dark') {
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.65)';
-  } else {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.45)';
-  }
+  rows.forEach((row, idx) => {
+    const { text, variant } = row;
+    const rx = 10;
+    const ry = padY + idx * (rowH + rowGap);
+    const rw = logicalW - 20;
+    const rh = rowH;
+    const radius = 15;
 
-  ctx.lineWidth = 3.5;
-  const rx = 12;
-  const ry = 12;
-  const rw = logicalW - 24;
-  const rh = logicalH - 24;
-  const radius = 16;
-  ctx.beginPath();
-  ctx.roundRect(rx, ry, rw, rh, radius);
-  ctx.fill();
-  ctx.stroke();
+    if (variant === 'clearance') {
+      ctx.fillStyle = 'rgba(6, 78, 59, 0.95)';
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.95)';
+    } else if (variant === 'overhang') {
+      ctx.fillStyle = 'rgba(127, 29, 29, 0.95)';
+      ctx.strokeStyle = 'rgba(248, 113, 113, 0.95)';
+    } else if (variant === 'custom-size') {
+      ctx.fillStyle = 'rgba(120, 53, 15, 0.95)';
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.95)';
+    } else if (variant === 'calculated-size') {
+      ctx.fillStyle = 'rgba(12, 74, 110, 0.95)';
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.95)';
+    } else if (variant === 'neutral-dark') {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.45)';
+    }
 
-  ctx.font = '800 30px "JetBrains Mono", "Plus Jakarta Sans", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    ctx.roundRect(rx, ry, rw, rh, radius);
+    ctx.fill();
+    ctx.stroke();
 
-  if (variant === 'clearance') {
-    ctx.fillStyle = '#6ee7b7';
-  } else if (variant === 'overhang') {
-    ctx.fillStyle = '#fecaca';
-  } else if (variant === 'custom-size') {
-    ctx.fillStyle = '#fde68a';
-  } else if (variant === 'calculated-size') {
-    ctx.fillStyle = '#7dd3fc';
-  } else if (variant === 'neutral-dark') {
-    ctx.fillStyle = '#f8fafc';
-  } else {
-    ctx.fillStyle = '#0f172a';
-  }
+    ctx.font = '800 27px "JetBrains Mono", "Plus Jakarta Sans", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
 
-  ctx.fillText(text, logicalW / 2, logicalH / 2 + 1);
+    if (variant === 'clearance') {
+      ctx.fillStyle = '#6ee7b7';
+    } else if (variant === 'overhang') {
+      ctx.fillStyle = '#fecaca';
+    } else if (variant === 'custom-size') {
+      ctx.fillStyle = '#fde68a';
+    } else if (variant === 'calculated-size') {
+      ctx.fillStyle = '#7dd3fc';
+    } else if (variant === 'neutral-dark') {
+      ctx.fillStyle = '#f8fafc';
+    } else {
+      ctx.fillStyle = '#0f172a';
+    }
+
+    ctx.fillText(text, logicalW / 2, ry + rh / 2 + 1);
+  });
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -201,6 +216,8 @@ function createBadgeSprite(
 
   const sprite = new THREE.Sprite(mat);
   sprite.renderOrder = 30;
+  const worldH = baseWidthWorld * (logicalH / logicalW);
+  sprite.scale.set(baseWidthWorld, worldH, 1);
   return sprite;
 }
 
@@ -1069,7 +1086,6 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
     // 5. 3D INTERNAL CLEARANCE VOIDS (여유 공간 볼륨) & OVERHANG ZONES (벗어난 초과 볼륨)
     if (activeClearance || activeOverhang) {
       const spaceGroup = new THREE.Group();
-      const spriteScale = Math.max(1.3, Math.max(contW, contD, totalH) * 0.17);
 
       const clearanceMat = new THREE.MeshBasicMaterial({
         color: 0x10b981, // Emerald green for remaining usable internal space
@@ -1102,7 +1118,7 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
       const stackMinZ = arrangement.centerItems ? -stackD / 2 : -contD / 2;
       const stackMaxZ = arrangement.centerItems ? stackD / 2 : -contD / 2 + stackD;
 
-      // (A) X-Axis Analysis (가로 여유 또는 가로 초과)
+      // (A) X-Axis Volumetric Box (가로 여유 또는 가로 초과 볼륨)
       if (summary.marginX > 2 && activeClearance) {
         const gapW = summary.marginX * SCALE;
         if (!arrangement.centerItems) {
@@ -1129,15 +1145,6 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
             spaceGroup.add(voidEdges);
           }
         }
-
-        const badgeX = createBadgeSprite(
-          `가로 여유 +${summary.marginX}mm`,
-          maxAnisotropy,
-          'clearance'
-        );
-        badgeX.scale.set(spriteScale * 1.9, spriteScale * 0.52, 1);
-        badgeX.position.set(contW / 2 - (gapW / 2) * (arrangement.centerItems ? 0.5 : 1), palletH + activeStackH + 0.35, contD / 2);
-        spaceGroup.add(badgeX);
       } else if (summary.overhangX > 1 && activeOverhang) {
         const overW = summary.overhangX * SCALE;
         if (!arrangement.centerItems) {
@@ -1164,18 +1171,9 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
             spaceGroup.add(overEdges);
           }
         }
-
-        const badgeOverX = createBadgeSprite(
-          `가로 이탈 -${summary.overhangX}mm`,
-          maxAnisotropy,
-          'overhang'
-        );
-        badgeOverX.scale.set(spriteScale * 1.9, spriteScale * 0.52, 1);
-        badgeOverX.position.set(stackMaxX, palletH + stackH + 0.45, 0);
-        spaceGroup.add(badgeOverX);
       }
 
-      // (B) Z-Axis Analysis (세로 여유 또는 세로 초과)
+      // (B) Z-Axis Volumetric Box (세로 여유 또는 세로 초과 볼륨)
       if (summary.marginZ > 2 && activeClearance) {
         const gapD = summary.marginZ * SCALE;
         if (!arrangement.centerItems) {
@@ -1202,15 +1200,6 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
             spaceGroup.add(voidEdges);
           }
         }
-
-        const badgeZ = createBadgeSprite(
-          `세로 여유 +${summary.marginZ}mm`,
-          maxAnisotropy,
-          'clearance'
-        );
-        badgeZ.scale.set(spriteScale * 1.9, spriteScale * 0.52, 1);
-        badgeZ.position.set(-contW / 2, palletH + activeStackH + 0.35, contD / 2 - (gapD / 2) * (arrangement.centerItems ? 0.5 : 1));
-        spaceGroup.add(badgeZ);
       } else if (summary.overhangZ > 1 && activeOverhang) {
         const overD = summary.overhangZ * SCALE;
         if (!arrangement.centerItems) {
@@ -1237,18 +1226,9 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
             spaceGroup.add(overEdges);
           }
         }
-
-        const badgeOverZ = createBadgeSprite(
-          `세로 이탈 -${summary.overhangZ}mm`,
-          maxAnisotropy,
-          'overhang'
-        );
-        badgeOverZ.scale.set(spriteScale * 1.9, spriteScale * 0.52, 1);
-        badgeOverZ.position.set(0, palletH + stackH + 0.45, stackMaxZ);
-        spaceGroup.add(badgeOverZ);
       }
 
-      // (C) Y-Axis Analysis (상단 높이 여유 또는 높이 초과)
+      // (C) Y-Axis Volumetric Box (상단 높이 여유 또는 높이 초과 볼륨)
       if (summary.marginY > 2 && activeClearance) {
         const gapH = summary.marginY * SCALE;
         const topVoidGeo = new THREE.BoxGeometry(contW, gapH, contD);
@@ -1260,15 +1240,6 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
         const topVoidEdges = new THREE.LineSegments(new THREE.EdgesGeometry(topVoidGeo), clearanceEdgeMat);
         topVoidEdges.position.copy(topVoidMesh.position);
         spaceGroup.add(topVoidEdges);
-
-        const badgeY = createBadgeSprite(
-          `상단 여유 +${summary.marginY}mm`,
-          maxAnisotropy,
-          'clearance'
-        );
-        badgeY.scale.set(spriteScale * 1.9, spriteScale * 0.52, 1);
-        badgeY.position.set(-contW / 2, totalH + gapH / 2, -contD / 2);
-        spaceGroup.add(badgeY);
       } else if (summary.overhangY > 1 && activeOverhang) {
         const overH = summary.overhangY * SCALE;
         const topOverGeo = new THREE.BoxGeometry(stackW, overH, stackD);
@@ -1284,196 +1255,244 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
         const topOverEdges = new THREE.LineSegments(new THREE.EdgesGeometry(topOverGeo), overhangEdgeMat);
         topOverEdges.position.copy(topOverMesh.position);
         spaceGroup.add(topOverEdges);
-
-        const badgeOverY = createBadgeSprite(
-          `높이 초과 -${summary.overhangY}mm`,
-          maxAnisotropy,
-          'overhang'
-        );
-        badgeOverY.scale.set(spriteScale * 1.9, spriteScale * 0.52, 1);
-        badgeOverY.position.set(-contW / 2, contH + overH / 2, -contD / 2);
-        spaceGroup.add(badgeOverY);
       }
 
       rootGroup.add(spaceGroup);
     }
 
-    // 6. 3D DIMENSION ANNOTATIONS (supports sizeDisplayMode: custom, calculated, both, off)
-    if (viewer.showDimensions && viewer.sizeDisplayMode !== 'off') {
+    // 6. UNIFIED 3-AXIS DIMENSION & MARGIN ANNOTATIONS
+    // Groupsの設定/계산/여유·초과 together at 3 dedicated non-overlapping axis zones:
+    // - 가로 (Width / X): Front (+Z) edge
+    // - 세로 (Depth / Z): Right (+X) edge
+    // - 높이 (Height / Y): Back-Right (+X, -Z) vertical edge
+    const showDimLines = viewer.showDimensions && viewer.sizeDisplayMode !== 'off';
+    if (showDimLines || activeClearance || activeOverhang) {
       const dimGroup = new THREE.Group();
       const maxSpan = Math.max(contW, contD, stackW, stackD, totalH, contH);
-      const offsetDist = Math.max(0.65, Math.min(contW, contD) * 0.15);
-      const spriteScale = Math.max(1.25, maxSpan * 0.16);
+      const offsetDist = Math.max(0.75, Math.min(contW, contD) * 0.16);
+      const baseBadgeW = Math.max(1.35, maxSpan * 0.175) * 1.65;
       const isBoth = viewer.sizeDisplayMode === 'both';
 
-      // (6A) USER-CONFIGURED SIZE DIMENSIONS (사용자 설정 크기)
-      if (showCustomSize) {
-        const customLineMat = new THREE.LineBasicMaterial({
-          color: isBoth ? 0xf59e0b : isDarkBg ? 0x94a3b8 : 0x334155,
+      const sMinX = stackCenterX - stackW / 2;
+      const sMaxX = stackCenterX + stackW / 2;
+      const sMinZ = stackCenterZ - stackD / 2;
+      const sMaxZ = stackCenterZ + stackD / 2;
+
+      const frontEdgeZ = showCustomSize && showCalculatedSize
+        ? Math.max(contD / 2, sMaxZ)
+        : showCalculatedSize
+        ? sMaxZ
+        : contD / 2;
+      const rightEdgeX = showCustomSize && showCalculatedSize
+        ? Math.max(contW / 2, sMaxX)
+        : showCalculatedSize
+        ? sMaxX
+        : contW / 2;
+      const backEdgeZ = showCustomSize && showCalculatedSize
+        ? Math.min(-contD / 2, sMinZ)
+        : showCalculatedSize
+        ? sMinZ
+        : -contD / 2;
+
+      const customLineMat = new THREE.LineBasicMaterial({
+        color: isBoth ? 0xf59e0b : isDarkBg ? 0x94a3b8 : 0x334155,
+      });
+      const calcLineMat = new THREE.LineBasicMaterial({
+        color: 0x06b6d4,
+      });
+
+      const customBadgeVariant: BadgeVariant = isBoth
+        ? 'custom-size'
+        : isDarkBg
+        ? 'neutral-dark'
+        : 'neutral-light';
+
+      // Helper to draw a dimension line with small perpendicular end ticks
+      const addDimensionSegment = (
+        p1: THREE.Vector3,
+        p2: THREE.Vector3,
+        tickDir: THREE.Vector3,
+        mat: THREE.LineBasicMaterial
+      ) => {
+        const tickHalf = offsetDist * 0.12;
+        const pts = [
+          p1.clone().addScaledVector(tickDir, -tickHalf),
+          p1.clone().addScaledVector(tickDir, tickHalf),
+          p1,
+          p2,
+          p2.clone().addScaledVector(tickDir, -tickHalf),
+          p2.clone().addScaledVector(tickDir, tickHalf),
+        ];
+        const segGeo = new THREE.BufferGeometry().setFromPoints([
+          pts[0],
+          pts[1],
+          pts[2],
+          pts[3],
+          pts[4],
+          pts[5],
+        ]);
+        dimGroup.add(new THREE.LineSegments(segGeo, mat));
+      };
+
+      // =========================================================
+      // ZONE 1: 가로 (Width / X-Axis) — Grouped at Front (+Z)
+      // =========================================================
+      const widthRows: BadgeRowItem[] = [];
+      if (showDimLines && showCustomSize) {
+        widthRows.push({
+          text: `가로 설정 ${summary.effectiveContainerWidth}mm`,
+          variant: customBadgeVariant,
         });
-        const customBadgeVariant = isBoth
-          ? 'custom-size'
-          : isDarkBg
-          ? 'neutral-dark'
-          : 'neutral-light';
-        const prefix = isBoth ? '설정 ' : '';
-
-        // Custom Width (Front +Z)
-        const wLabel = createBadgeSprite(
-          `${prefix}${summary.effectiveContainerWidth}`,
-          maxAnisotropy,
-          customBadgeVariant
+        const lineZ = frontEdgeZ + offsetDist * (isBoth ? 0.58 : 0.48);
+        addDimensionSegment(
+          new THREE.Vector3(-contW / 2, 0.05, lineZ),
+          new THREE.Vector3(contW / 2, 0.05, lineZ),
+          new THREE.Vector3(0, 0, 1),
+          customLineMat
         );
-        wLabel.scale.set(spriteScale * 1.65, spriteScale * 0.48, 1);
-        wLabel.position.set(0, 0.15, contD / 2 + offsetDist);
-        dimGroup.add(wLabel);
-
-        const wLinePts = [
-          new THREE.Vector3(-contW / 2, 0.05, contD / 2 + offsetDist * 0.55),
-          new THREE.Vector3(contW / 2, 0.05, contD / 2 + offsetDist * 0.55),
-        ];
-        dimGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(wLinePts), customLineMat));
-
-        // Custom Depth (Right +X)
-        const dLabel = createBadgeSprite(
-          `${prefix}${summary.effectiveContainerDepth}`,
-          maxAnisotropy,
-          customBadgeVariant
+      }
+      if (showDimLines && showCalculatedSize) {
+        widthRows.push({
+          text: `가로 계산 ${summary.stackWidth}mm`,
+          variant: 'calculated-size',
+        });
+        const lineZ = frontEdgeZ + offsetDist * (isBoth ? 0.34 : 0.48);
+        addDimensionSegment(
+          new THREE.Vector3(sMinX, 0.05, lineZ),
+          new THREE.Vector3(sMaxX, 0.05, lineZ),
+          new THREE.Vector3(0, 0, 1),
+          calcLineMat
         );
-        dLabel.scale.set(spriteScale * 1.65, spriteScale * 0.48, 1);
-        dLabel.position.set(contW / 2 + offsetDist, 0.15, 0);
-        dimGroup.add(dLabel);
-
-        const dLinePts = [
-          new THREE.Vector3(contW / 2 + offsetDist * 0.55, 0.05, -contD / 2),
-          new THREE.Vector3(contW / 2 + offsetDist * 0.55, 0.05, contD / 2),
-        ];
-        dimGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(dLinePts), customLineMat));
-
-        // Custom Max Height (Back-Right +X, -Z)
-        const hLabel = createBadgeSprite(
-          `${prefix}${summary.effectiveContainerHeight}`,
-          maxAnisotropy,
-          customBadgeVariant
-        );
-        hLabel.scale.set(spriteScale * 1.65, spriteScale * 0.48, 1);
-        hLabel.position.set(contW / 2 + offsetDist * 1.15, contH / 2, -contD / 2);
-        dimGroup.add(hLabel);
-
-        const hLinePts = [
-          new THREE.Vector3(contW / 2 + offsetDist * 0.5, 0, -contD / 2),
-          new THREE.Vector3(contW / 2 + offsetDist * 0.5, contH, -contD / 2),
-        ];
-        dimGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(hLinePts), customLineMat));
+      }
+      if (summary.marginX > 0 && activeClearance) {
+        widthRows.push({
+          text: `가로 여유 +${summary.marginX}mm`,
+          variant: 'clearance',
+        });
+      } else if (summary.overhangX > 0 && activeOverhang) {
+        widthRows.push({
+          text: `가로 초과 -${summary.overhangX}mm`,
+          variant: 'overhang',
+        });
       }
 
-      // (6B) CALCULATED STACK SIZE DIMENSIONS (계산된 크기)
-      if (showCalculatedSize) {
-        const calcLineMat = new THREE.LineBasicMaterial({
-          color: 0x06b6d4,
+      if (widthRows.length > 0) {
+        const widthSprite = createAxisBadgeStackSprite(widthRows, maxAnisotropy, baseBadgeW);
+        widthSprite.position.set(
+          showCalculatedSize && !showCustomSize ? stackCenterX : 0,
+          0.18,
+          frontEdgeZ + offsetDist * 1.15
+        );
+        dimGroup.add(widthSprite);
+      }
+
+      // =========================================================
+      // ZONE 2: 세로 (Depth / Z-Axis) — Grouped at Right (+X)
+      // =========================================================
+      const depthRows: BadgeRowItem[] = [];
+      if (showDimLines && showCustomSize) {
+        depthRows.push({
+          text: `세로 설정 ${summary.effectiveContainerDepth}mm`,
+          variant: customBadgeVariant,
         });
-        const prefix = isBoth ? '계산 ' : '';
-        const sMinX = stackCenterX - stackW / 2;
-        const sMaxX = stackCenterX + stackW / 2;
-        const sMinZ = stackCenterZ - stackD / 2;
-        const sMaxZ = stackCenterZ + stackD / 2;
+        const lineX = rightEdgeX + offsetDist * (isBoth ? 0.58 : 0.48);
+        addDimensionSegment(
+          new THREE.Vector3(lineX, 0.05, -contD / 2),
+          new THREE.Vector3(lineX, 0.05, contD / 2),
+          new THREE.Vector3(1, 0, 0),
+          customLineMat
+        );
+      }
+      if (showDimLines && showCalculatedSize) {
+        depthRows.push({
+          text: `세로 계산 ${summary.stackDepth}mm`,
+          variant: 'calculated-size',
+        });
+        const lineX = rightEdgeX + offsetDist * (isBoth ? 0.34 : 0.48);
+        addDimensionSegment(
+          new THREE.Vector3(lineX, 0.05, sMinZ),
+          new THREE.Vector3(lineX, 0.05, sMaxZ),
+          new THREE.Vector3(1, 0, 0),
+          calcLineMat
+        );
+      }
+      if (summary.marginZ > 0 && activeClearance) {
+        depthRows.push({
+          text: `세로 여유 +${summary.marginZ}mm`,
+          variant: 'clearance',
+        });
+      } else if (summary.overhangZ > 0 && activeOverhang) {
+        depthRows.push({
+          text: `세로 초과 -${summary.overhangZ}mm`,
+          variant: 'overhang',
+        });
+      }
 
-        if (!isBoth) {
-          // Only calculated size is shown: place at Front (+Z), Right (+X), Back-Right (+X, -Z)
-          const wLabel = createBadgeSprite(
-            `${summary.stackWidth}`,
-            maxAnisotropy,
-            'calculated-size'
-          );
-          wLabel.scale.set(spriteScale * 1.65, spriteScale * 0.48, 1);
-          wLabel.position.set(stackCenterX, 0.15, sMaxZ + offsetDist);
-          dimGroup.add(wLabel);
+      if (depthRows.length > 0) {
+        const depthSprite = createAxisBadgeStackSprite(depthRows, maxAnisotropy, baseBadgeW);
+        depthSprite.position.set(
+          rightEdgeX + offsetDist * 1.15,
+          0.18,
+          showCalculatedSize && !showCustomSize ? stackCenterZ : 0
+        );
+        dimGroup.add(depthSprite);
+      }
 
-          const wLinePts = [
-            new THREE.Vector3(sMinX, 0.05, sMaxZ + offsetDist * 0.55),
-            new THREE.Vector3(sMaxX, 0.05, sMaxZ + offsetDist * 0.55),
-          ];
-          dimGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(wLinePts), calcLineMat));
+      // =========================================================
+      // ZONE 3: 높이 (Height / Y-Axis) — Grouped at Back-Right (+X, -Z)
+      // =========================================================
+      const heightRows: BadgeRowItem[] = [];
+      if (showDimLines && showCustomSize) {
+        heightRows.push({
+          text: `높이 설정 ${summary.effectiveContainerHeight}mm`,
+          variant: customBadgeVariant,
+        });
+        const lineX = rightEdgeX + offsetDist * (isBoth ? 0.58 : 0.48);
+        addDimensionSegment(
+          new THREE.Vector3(lineX, 0, backEdgeZ),
+          new THREE.Vector3(lineX, contH, backEdgeZ),
+          new THREE.Vector3(1, 0, 0),
+          customLineMat
+        );
+      }
+      if (showDimLines && showCalculatedSize) {
+        heightRows.push({
+          text: `높이 계산 ${summary.totalHeight}mm`,
+          variant: 'calculated-size',
+        });
+        const lineX = rightEdgeX + offsetDist * (isBoth ? 0.34 : 0.48);
+        addDimensionSegment(
+          new THREE.Vector3(lineX, 0, backEdgeZ),
+          new THREE.Vector3(lineX, totalH, backEdgeZ),
+          new THREE.Vector3(1, 0, 0),
+          calcLineMat
+        );
+      }
+      if (summary.marginY > 0 && activeClearance) {
+        heightRows.push({
+          text: `높이 여유 +${summary.marginY}mm`,
+          variant: 'clearance',
+        });
+      } else if (summary.overhangY > 0 && activeOverhang) {
+        heightRows.push({
+          text: `높이 초과 -${summary.overhangY}mm`,
+          variant: 'overhang',
+        });
+      }
 
-          const dLabel = createBadgeSprite(
-            `${summary.stackDepth}`,
-            maxAnisotropy,
-            'calculated-size'
-          );
-          dLabel.scale.set(spriteScale * 1.65, spriteScale * 0.48, 1);
-          dLabel.position.set(sMaxX + offsetDist, 0.15, stackCenterZ);
-          dimGroup.add(dLabel);
-
-          const dLinePts = [
-            new THREE.Vector3(sMaxX + offsetDist * 0.55, 0.05, sMinZ),
-            new THREE.Vector3(sMaxX + offsetDist * 0.55, 0.05, sMaxZ),
-          ];
-          dimGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(dLinePts), calcLineMat));
-
-          const hLabel = createBadgeSprite(
-            `${summary.totalHeight}`,
-            maxAnisotropy,
-            'calculated-size'
-          );
-          hLabel.scale.set(spriteScale * 1.65, spriteScale * 0.48, 1);
-          hLabel.position.set(sMaxX + offsetDist * 1.15, totalH / 2, sMinZ);
-          dimGroup.add(hLabel);
-
-          const hLinePts = [
-            new THREE.Vector3(sMaxX + offsetDist * 0.5, 0, sMinZ),
-            new THREE.Vector3(sMaxX + offsetDist * 0.5, totalH, sMinZ),
-          ];
-          dimGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(hLinePts), calcLineMat));
-        } else {
-          // Both sizes shown simultaneously: place Calculated dimensions on non-overlapping positions (Top-Front, Left -X, Front-Left)
-          const wLabel = createBadgeSprite(
-            `${prefix}${summary.stackWidth}`,
-            maxAnisotropy,
-            'calculated-size'
-          );
-          wLabel.scale.set(spriteScale * 1.65, spriteScale * 0.48, 1);
-          wLabel.position.set(stackCenterX, totalH + 0.45, sMaxZ);
-          dimGroup.add(wLabel);
-
-          const wLinePts = [
-            new THREE.Vector3(sMinX, totalH + 0.12, sMaxZ),
-            new THREE.Vector3(sMaxX, totalH + 0.12, sMaxZ),
-          ];
-          dimGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(wLinePts), calcLineMat));
-
-          // Calculated Depth on Left (-X) side
-          const leftBoundary = Math.min(-contW / 2, sMinX);
-          const dLabel = createBadgeSprite(
-            `${prefix}${summary.stackDepth}`,
-            maxAnisotropy,
-            'calculated-size'
-          );
-          dLabel.scale.set(spriteScale * 1.65, spriteScale * 0.48, 1);
-          dLabel.position.set(leftBoundary - offsetDist, 0.15, stackCenterZ);
-          dimGroup.add(dLabel);
-
-          const dLinePts = [
-            new THREE.Vector3(leftBoundary - offsetDist * 0.55, 0.05, sMinZ),
-            new THREE.Vector3(leftBoundary - offsetDist * 0.55, 0.05, sMaxZ),
-          ];
-          dimGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(dLinePts), calcLineMat));
-
-          // Calculated Total Height on Front-Left (-X, +Z) corner
-          const hLabel = createBadgeSprite(
-            `${prefix}${summary.totalHeight}`,
-            maxAnisotropy,
-            'calculated-size'
-          );
-          hLabel.scale.set(spriteScale * 1.65, spriteScale * 0.48, 1);
-          hLabel.position.set(leftBoundary - offsetDist * 1.15, totalH / 2, sMaxZ);
-          dimGroup.add(hLabel);
-
-          const hLinePts = [
-            new THREE.Vector3(leftBoundary - offsetDist * 0.5, 0, sMaxZ),
-            new THREE.Vector3(leftBoundary - offsetDist * 0.5, totalH, sMaxZ),
-          ];
-          dimGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(hLinePts), calcLineMat));
-        }
+      if (heightRows.length > 0) {
+        const heightSprite = createAxisBadgeStackSprite(heightRows, maxAnisotropy, baseBadgeW);
+        const refHeight = showCustomSize && showCalculatedSize
+          ? Math.max(contH, totalH)
+          : showCalculatedSize
+          ? totalH
+          : contH;
+        heightSprite.position.set(
+          rightEdgeX + offsetDist * 1.25,
+          Math.max(0.6, refHeight * 0.55),
+          backEdgeZ
+        );
+        dimGroup.add(heightSprite);
       }
 
       rootGroup.add(dimGroup);

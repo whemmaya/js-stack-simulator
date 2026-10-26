@@ -32,6 +32,9 @@ export default function App() {
   );
   const [viewer, setViewer] = useState<ViewerConfig>({
     colorTheme: 'cad-classic',
+    palletShape: 'plastic',
+    palletColor: 'yellow',
+    customPalletColor: '#d4a373',
     sizeDisplayMode: 'both',
     showDimensions: true,
     showOuterBox: false,

@@ -59,8 +59,42 @@ export type BackgroundStyle =
   | 'warm-sand'
   | 'custom';
 
+export type PalletShape = 'plastic' | 'wood';
+
+export type PalletColorPreset =
+  | 'red'
+  | 'yellow'
+  | 'blue'
+  | 'black'
+  | 'white'
+  | 'custom';
+
+export const PALLET_COLOR_PRESET_MAP: Record<
+  Exclude<PalletColorPreset, 'custom'>,
+  string
+> = {
+  red: '#dc2626',
+  yellow: '#facc15',
+  blue: '#2563eb',
+  black: '#1e293b',
+  white: '#f8fafc',
+};
+
+export function resolvePalletHexColor(
+  palletColor: PalletColorPreset = 'yellow',
+  customPalletColor: string = '#d4a373'
+): string {
+  if (palletColor === 'custom') {
+    return customPalletColor || '#d4a373';
+  }
+  return PALLET_COLOR_PRESET_MAP[palletColor] || '#facc15';
+}
+
 export interface ViewerConfig {
   colorTheme: ColorTheme;
+  palletShape: PalletShape;          // 팔레트 모양 ('plastic': 플라스틱, 'wood': 나무)
+  palletColor: PalletColorPreset;    // 팔레트 색상 ('red' | 'yellow' | 'blue' | 'black' | 'white' | 'custom')
+  customPalletColor: string;         // 사용자 지정 팔레트 색상 (HEX)
   sizeDisplayMode: SizeDisplayMode; // 3D 뷰 팔레트/외박스 크기 표시 모드 ('custom': 사용자 설정, 'calculated': 계산된 크기, 'both': 둘다, 'off': 모두 OFF)
   showDimensions: boolean;      // 3D 치수선 표시 (1100, 1100, 1445 등)
   showSpaceAnalysis: boolean;   // 내부 여유 공간 및 벗어난 초과 영역 통합 표시 여부

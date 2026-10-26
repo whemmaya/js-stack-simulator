@@ -16,13 +16,15 @@ import {
 import {
   ArrangementConfig,
   BackgroundStyle,
-  ColorTheme,
   ContainerSpec,
   ItemShape,
   ItemSpec,
   PackingMode,
   PackingSummary,
+  PalletColorPreset,
+  PalletShape,
   QuickPreset,
+  resolvePalletHexColor,
   StackingPattern,
   ViewerConfig,
 } from '../types/packing';
@@ -1601,84 +1603,233 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
         {/* TAB 4: 테마 · 색상 · 외관 설정 */}
         {activeTab === 'style' && (
           <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-2">
-                3D 시각화 컬러 테마
-              </label>
-              <div className="space-y-2">
-                {(
-                  [
-                    {
-                      id: 'cad-classic',
-                      title: '물류 CAD 클래식 (첨부 이미지 1 스타일)',
-                      desc: '장변(Red) · 단변(Blue) · 상면(White) + 옐로우 팔레트',
-                    },
-                    {
-                      id: 'carton-can',
-                      title: '반투명 외박스 & 스틸캔 (첨부 이미지 2 스타일)',
-                      desc: '스틸 블루 원통/상자 + 골드 라인 반투명 카톤 케이스',
-                    },
-                    {
-                      id: 'layer-vivid',
-                      title: '단수(Layer)별 컬러 구분',
-                      desc: '1단~8단까지 층마다 다른 색상을 부여하여 적재 단수 식별',
-                    },
-                    {
-                      id: 'kraft',
-                      title: '실제 골판지 크라프트 박스 & 목재',
-                      desc: '테이프 마감 골판지 상자 및 목재 팔레트 질감',
-                    },
-                    {
-                      id: 'custom',
-                      title: '사용자 지정 색상',
-                      desc: '원하는 물품 메인/보조 색상을 직접 선택',
-                    },
-                  ] as const
-                ).map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => onUpdateViewer({ colorTheme: t.id as ColorTheme })}
-                    className={`w-full p-2.5 rounded-lg border text-left transition-colors ${
-                      viewer.colorTheme === t.id
-                        ? 'bg-blue-600/20 border-blue-500 text-white'
-                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <div className="text-xs font-semibold">{t.title}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">{t.desc}</div>
-                  </button>
-                ))}
+            {/* 1. 적재 물품(박스 / 원통) 색상 설정 (주 색상 · 보조 색상) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-300">
+                  적재 물품 색상 설정 (주 색상 · 보조 색상)
+                </span>
+                <span className="text-[11px] font-mono text-slate-400">
+                  {item.shape === 'cylinder' ? '원통 바디 · 캡' : '장변 · 단변'}
+                </span>
               </div>
-            </div>
 
-            {viewer.colorTheme === 'custom' && (
-              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800">
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">
-                    주 색상 (장변/바디)
-                  </label>
+              {/* 빠른 물품 배색 프리셋 */}
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  {
+                    label: 'CAD 레드·블루',
+                    primary: '#ef0000',
+                    secondary: '#0018f9',
+                  },
+                  {
+                    label: '크라프트 골판지',
+                    primary: '#c89b6e',
+                    secondary: '#9c6f44',
+                  },
+                  {
+                    label: '스틸 블루 캔',
+                    primary: '#5b84b1',
+                    secondary: '#9ab8d9',
+                  },
+                  {
+                    label: '에메랄드·네이비',
+                    primary: '#10b981',
+                    secondary: '#1e40af',
+                  },
+                ].map((preset) => {
+                  const isSelected =
+                    item.customColor.toLowerCase() === preset.primary.toLowerCase() &&
+                    item.secondaryColor.toLowerCase() === preset.secondary.toLowerCase();
+                  return (
+                    <button
+                      key={preset.label}
+                      onClick={() =>
+                        onUpdateItem({
+                          customColor: preset.primary,
+                          secondaryColor: preset.secondary,
+                        })
+                      }
+                      className={`flex items-center gap-2 p-2 rounded-lg border text-left transition-colors ${
+                        isSelected
+                          ? 'bg-blue-600/20 border-blue-500 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <span className="flex items-center shrink-0">
+                        <span
+                          className="w-3.5 h-3.5 rounded-l border border-slate-600"
+                          style={{ backgroundColor: preset.primary }}
+                        />
+                        <span
+                          className="w-3.5 h-3.5 rounded-r border border-l-0 border-slate-600"
+                          style={{ backgroundColor: preset.secondary }}
+                        />
+                      </span>
+                      <span className="text-[11px] font-medium truncate">{preset.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-semibold text-slate-300">
+                      주 색상 {item.shape === 'cylinder' ? '(바디)' : '(장변)'}
+                    </label>
+                    <span className="text-[10px] font-mono text-slate-400 uppercase">
+                      {item.customColor}
+                    </span>
+                  </div>
                   <input
                     type="color"
                     value={item.customColor}
                     onChange={(e) => onUpdateItem({ customColor: e.target.value })}
-                    className="w-full h-9 rounded cursor-pointer bg-slate-950 border border-slate-800 p-1"
+                    className="w-full h-8 rounded cursor-pointer bg-slate-900 border border-slate-700 p-0.5"
                   />
                 </div>
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">
-                    보조 색상 (단변/상단캡)
-                  </label>
+
+                <div className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-semibold text-slate-300">
+                      보조 색상 {item.shape === 'cylinder' ? '(상·하단 캡)' : '(단변)'}
+                    </label>
+                    <span className="text-[10px] font-mono text-slate-400 uppercase">
+                      {item.secondaryColor}
+                    </span>
+                  </div>
                   <input
                     type="color"
                     value={item.secondaryColor}
                     onChange={(e) => onUpdateItem({ secondaryColor: e.target.value })}
-                    className="w-full h-9 rounded cursor-pointer bg-slate-950 border border-slate-800 p-1"
+                    className="w-full h-8 rounded cursor-pointer bg-slate-900 border border-slate-700 p-0.5"
                   />
                 </div>
               </div>
-            )}
+            </div>
 
-            {/* Outer Box Opacity & Edge Lines */}
+            {/* 2. 팔레트 모양 및 색상 설정 */}
+            <div className="space-y-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-300">
+                  팔레트 모양 및 색상 설정
+                </span>
+                <span className="text-[11px] font-mono text-slate-400">
+                  {viewer.palletShape === 'wood' ? '나무 팔레트' : '플라스틱 팔레트'}
+                </span>
+              </div>
+
+              {/* Pallet Shape (플라스틱 vs 나무) */}
+              <div>
+                <label className="block text-[11px] text-slate-400 mb-1.5">
+                  팔레트 모양 선택
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      {
+                        id: 'plastic',
+                        label: '플라스틱 (Plastic)',
+                        desc: '일체형 사출 상판 · 4방향 블록형',
+                      },
+                      {
+                        id: 'wood',
+                        label: '나무 (Wood)',
+                        desc: '상하단 데크 보드 · 각재 러너형',
+                      },
+                    ] as { id: PalletShape; label: string; desc: string }[]
+                  ).map((sh) => (
+                    <button
+                      key={sh.id}
+                      onClick={() => onUpdateViewer({ palletShape: sh.id })}
+                      className={`p-2.5 rounded-lg border text-left transition-colors ${
+                        (viewer.palletShape ?? 'plastic') === sh.id
+                          ? 'bg-blue-600/20 border-blue-500 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <div className="text-xs font-semibold">{sh.label}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">{sh.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Pallet Color (빨강, 노랑, 파랑, 검정, 흰색, 커스텀) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] text-slate-400">
+                    팔레트 색상 선택
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase">
+                    {resolvePalletHexColor(viewer.palletColor, viewer.customPalletColor)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      { id: 'red', label: '빨강', color: '#dc2626' },
+                      { id: 'yellow', label: '노랑', color: '#facc15' },
+                      { id: 'blue', label: '파랑', color: '#2563eb' },
+                      { id: 'black', label: '검정', color: '#1e293b' },
+                      { id: 'white', label: '흰색', color: '#f8fafc' },
+                      {
+                        id: 'custom',
+                        label: '커스텀',
+                        color: viewer.customPalletColor || '#d4a373',
+                      },
+                    ] as { id: PalletColorPreset; label: string; color: string }[]
+                  ).map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => onUpdateViewer({ palletColor: c.id })}
+                      className={`flex items-center gap-2 p-2 rounded-lg border text-left transition-colors ${
+                        (viewer.palletColor ?? 'yellow') === c.id
+                          ? 'bg-blue-600/20 border-blue-500 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <span
+                        className="w-4 h-4 rounded border border-slate-500 shrink-0"
+                        style={{ backgroundColor: c.color }}
+                      />
+                      <span className="text-[11px] font-medium truncate">{c.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Pallet Color Picker */}
+              <div className="flex items-center justify-between gap-3 bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+                <div>
+                  <div className="text-xs font-semibold text-slate-200">
+                    커스텀 팔레트 색상 직접 선택
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    목재 색감(#D4A373) 등 원하는 색상을 직접 지정합니다
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-slate-300 uppercase">
+                    {viewer.customPalletColor || '#d4a373'}
+                  </span>
+                  <input
+                    type="color"
+                    value={viewer.customPalletColor || '#d4a373'}
+                    onChange={(e) =>
+                      onUpdateViewer({
+                        palletColor: 'custom',
+                        customPalletColor: e.target.value,
+                      })
+                    }
+                    className="w-10 h-8 rounded cursor-pointer bg-slate-900 border border-slate-700 p-0.5"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 3. 외박스 투명도 및 윤곽선 강조 */}
             <div className="space-y-3 pt-2 border-t border-slate-800">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-300">외박스 벽면 투명도</span>
@@ -1992,7 +2143,7 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
                           cx={it.x}
                           cy={it.z}
                           r={Math.max(2, it.dimX / 2 - 2)}
-                          fill={isOut ? '#ef4444' : '#5b84b1'}
+                          fill={isOut ? '#ef4444' : item.customColor || '#5b84b1'}
                           fillOpacity={0.9}
                           stroke={isOut ? '#fecaca' : '#0f172a'}
                           strokeWidth={Math.max(2, maxSpanW * 0.01)}
@@ -2004,7 +2155,13 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
                           y={it.z - it.dimZ / 2 + 2}
                           width={Math.max(4, it.dimX - 4)}
                           height={Math.max(4, it.dimZ - 4)}
-                          fill={isOut ? '#ef4444' : it.isRotated ? '#2563eb' : '#3b82f6'}
+                          fill={
+                            isOut
+                              ? '#ef4444'
+                              : it.isRotated
+                              ? item.secondaryColor || '#2563eb'
+                              : item.customColor || '#3b82f6'
+                          }
                           fillOpacity={0.88}
                           stroke={isOut ? '#fecaca' : '#0f172a'}
                           strokeWidth={Math.max(2, maxSpanW * 0.01)}
@@ -2076,7 +2233,10 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
                               y={groundY - palletH}
                               width={contW}
                               height={palletH}
-                              fill="#eab308"
+                              fill={resolvePalletHexColor(
+                                viewer.palletColor,
+                                viewer.customPalletColor
+                              )}
                               stroke="#0f172a"
                               strokeWidth={Math.max(2, viewW * 0.01)}
                             />
@@ -2099,8 +2259,8 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
                                   isLayerOverY || isLayerOverX
                                     ? '#ef4444'
                                     : lIdx % 2 === 0
-                                    ? '#3b82f6'
-                                    : '#2563eb'
+                                    ? item.customColor || '#3b82f6'
+                                    : item.secondaryColor || '#2563eb'
                                 }
                                 fillOpacity={0.88}
                                 stroke="#0f172a"

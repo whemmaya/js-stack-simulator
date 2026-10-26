@@ -29,6 +29,7 @@ import {
   PackingMode,
   PackingSummary,
   PlacedItem,
+  resolvePalletHexColor,
   ViewerConfig,
 } from '../types/packing';
 
@@ -43,17 +44,6 @@ interface PackingCanvas3DProps {
   onUpdateArrangement: (patch: Partial<ArrangementConfig>) => void;
   captureTrigger: number;
 }
-
-const LAYER_PALETTE = [
-  '#ef4444', // Layer 1 Red
-  '#2563eb', // Layer 2 Blue
-  '#10b981', // Layer 3 Emerald
-  '#f59e0b', // Layer 4 Amber
-  '#8b5cf6', // Layer 5 Violet
-  '#ec4899', // Layer 6 Pink
-  '#06b6d4', // Layer 7 Cyan
-  '#84cc16', // Layer 8 Lime
-];
 
 const BG_PRESETS: { id: BackgroundStyle; label: string; color: string }[] = [
   { id: 'cad-gray', label: 'CAD 그레이', color: '#b5b7bb' },
@@ -664,8 +654,11 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
     // 2. PALLET BASE (Always render physical pallet in pallet mode, even when sizeDisplayMode === 'off')
     if (mode === 'pallet' && palletH > 0) {
       const palletGroup = new THREE.Group();
-      const isCadClassic = viewer.colorTheme === 'cad-classic';
-      const palletColor = isCadClassic ? '#f5f06b' : viewer.colorTheme === 'kraft' ? '#d4a373' : '#eab308';
+      const isPlasticPallet = (viewer.palletShape ?? 'plastic') === 'plastic';
+      const palletColor = resolvePalletHexColor(
+        viewer.palletColor,
+        viewer.customPalletColor
+      );
 
       // Use user-configured pallet size by default (including when sizeDisplayMode === 'off'),
       // or calculated stack footprint when sizeDisplayMode === 'calculated'
@@ -677,78 +670,118 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
 
       const palletMat = new THREE.MeshStandardMaterial({
         color: palletColor,
-        roughness: isCadClassic ? 0.55 : 0.7,
-        metalness: 0.05,
+        roughness: isPlasticPallet ? 0.42 : 0.78,
+        metalness: isPlasticPallet ? 0.08 : 0.02,
       });
       const edgeMat = new THREE.LineBasicMaterial({
-        color: useCalculatedFootprint ? 0x0284c7 : 0x111111,
+        color: useCalculatedFootprint
+          ? 0x0284c7
+          : viewer.palletColor === 'black'
+          ? 0x475569
+          : 0x111111,
       });
 
-      if (isCadClassic) {
-        const topDeckH = palletH * 0.72;
-        const botDeckH = palletH * 0.28;
+      const addPartWithEdges = (
+        geo: THREE.BufferGeometry,
+        posX: number,
+        posY: number,
+        posZ: number
+      ) => {
+        const mesh = new THREE.Mesh(geo, palletMat);
+        mesh.position.set(posX, posY, posZ);
+        mesh.castShadow = !isSoftwareGl;
+        mesh.receiveShadow = true;
+        palletGroup.add(mesh);
+        if (viewer.showEdges) {
+          const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
+          edges.position.copy(mesh.position);
+          palletGroup.add(edges);
+        }
+      };
 
+      if (isPlasticPallet) {
+        // Industrial molded plastic pallet: Solid upper deck + 9-block forklift posts + lower perimeter/skid deck
+        const topDeckH = palletH * 0.28;
+        const botDeckH = palletH * 0.18;
+        const postH = Math.max(0.01, palletH - topDeckH - botDeckH);
+
+        // 1. Solid Molded Top Deck
         const topGeo = new THREE.BoxGeometry(baseW, topDeckH, baseD);
-        const topMesh = new THREE.Mesh(topGeo, palletMat);
-        topMesh.position.set(baseCenterX, botDeckH + topDeckH / 2, baseCenterZ);
-        topMesh.receiveShadow = true;
-        palletGroup.add(topMesh);
+        addPartWithEdges(topGeo, baseCenterX, palletH - topDeckH / 2, baseCenterZ);
 
-        const topEdges = new THREE.LineSegments(new THREE.EdgesGeometry(topGeo), edgeMat);
-        topEdges.position.copy(topMesh.position);
-        palletGroup.add(topEdges);
+        // 2. 9 Molded Support Posts (3x3 grid creating 4-way forklift entry tunnels)
+        const postW = baseW * 0.16;
+        const postD = baseD * 0.16;
+        const postXCoords = [
+          baseCenterX - baseW / 2 + postW / 2,
+          baseCenterX,
+          baseCenterX + baseW / 2 - postW / 2,
+        ];
+        const postZCoords = [
+          baseCenterZ - baseD / 2 + postD / 2,
+          baseCenterZ,
+          baseCenterZ + baseD / 2 - postD / 2,
+        ];
+        const postGeo = new THREE.BoxGeometry(postW, postH, postD);
+        for (const px of postXCoords) {
+          for (const pz of postZCoords) {
+            addPartWithEdges(postGeo, px, botDeckH + postH / 2, pz);
+          }
+        }
 
-        const botGeo = new THREE.BoxGeometry(baseW, botDeckH, baseD);
-        const botMesh = new THREE.Mesh(botGeo, palletMat);
-        botMesh.position.set(baseCenterX, botDeckH / 2, baseCenterZ);
-        botMesh.receiveShadow = true;
-        palletGroup.add(botMesh);
-
-        const botEdges = new THREE.LineSegments(new THREE.EdgesGeometry(botGeo), edgeMat);
-        botEdges.position.copy(botMesh.position);
-        palletGroup.add(botEdges);
+        // 3. Bottom Skid Runners (3 longitudinal runners along Z)
+        const botRunnerGeo = new THREE.BoxGeometry(postW, botDeckH, baseD);
+        for (const px of postXCoords) {
+          addPartWithEdges(botRunnerGeo, px, botDeckH / 2, baseCenterZ);
+        }
       } else {
-        const boardThickness = palletH * 0.22;
-        const blockHeight = palletH * 0.56;
+        // Slatted Wooden Pallet: 7 top deck boards + 3 longitudinal stringer runners + 3 bottom boards
+        const boardThickness = palletH * 0.2;
+        const botBoardThickness = palletH * 0.18;
+        const runnerHeight = Math.max(0.01, palletH - boardThickness - botBoardThickness);
         const numBoards = 7;
         const boardW = baseW;
         const boardD = (baseD * 0.78) / numBoards;
         const boardStep = (baseD - boardD) / (numBoards - 1);
 
+        // 1. Top Slatted Deck Boards
+        const topBoardGeo = new THREE.BoxGeometry(boardW, boardThickness, boardD);
         for (let i = 0; i < numBoards; i++) {
-          const bGeo = new THREE.BoxGeometry(boardW, boardThickness, boardD);
-          const bMesh = new THREE.Mesh(bGeo, palletMat);
-          bMesh.position.set(
+          addPartWithEdges(
+            topBoardGeo,
             baseCenterX,
             palletH - boardThickness / 2,
             baseCenterZ - baseD / 2 + boardD / 2 + i * boardStep
           );
-          bMesh.castShadow = !isSoftwareGl;
-          bMesh.receiveShadow = true;
-          palletGroup.add(bMesh);
-          if (viewer.showEdges) {
-            const bEdges = new THREE.LineSegments(new THREE.EdgesGeometry(bGeo), edgeMat);
-            bEdges.position.copy(bMesh.position);
-            palletGroup.add(bEdges);
-          }
         }
 
+        // 2. 3 Longitudinal Stringer Runners
         const runnerW = baseW * 0.08;
         const xOffsets = [
           baseCenterX - baseW / 2 + runnerW / 2,
           baseCenterX,
           baseCenterX + baseW / 2 - runnerW / 2,
         ];
+        const runnerGeo = new THREE.BoxGeometry(runnerW, runnerHeight, baseD);
         for (const rx of xOffsets) {
-          const sGeo = new THREE.BoxGeometry(runnerW, blockHeight + boardThickness, baseD);
-          const sMesh = new THREE.Mesh(sGeo, palletMat);
-          sMesh.position.set(rx, (blockHeight + boardThickness) / 2, baseCenterZ);
-          palletGroup.add(sMesh);
-          if (viewer.showEdges) {
-            const sEdges = new THREE.LineSegments(new THREE.EdgesGeometry(sGeo), edgeMat);
-            sEdges.position.copy(sMesh.position);
-            palletGroup.add(sEdges);
-          }
+          addPartWithEdges(
+            runnerGeo,
+            rx,
+            botBoardThickness + runnerHeight / 2,
+            baseCenterZ
+          );
+        }
+
+        // 3. 3 Bottom Deck Boards
+        const botBoardD = baseD * 0.12;
+        const zOffsets = [
+          baseCenterZ - baseD / 2 + botBoardD / 2,
+          baseCenterZ,
+          baseCenterZ + baseD / 2 - botBoardD / 2,
+        ];
+        const botBoardGeo = new THREE.BoxGeometry(boardW, botBoardThickness, botBoardD);
+        for (const bz of zOffsets) {
+          addPartWithEdges(botBoardGeo, baseCenterX, botBoardThickness / 2, bz);
         }
       }
 
@@ -803,99 +836,43 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
 
         const boxGeo = new THREE.BoxGeometry(localW, localH, localD);
 
-        let materials: THREE.Material | THREE.Material[];
+        const colPrimary = item.customColor || '#ef0000';
+        const colSecondary = item.secondaryColor || '#0018f9';
 
-        if (viewer.colorTheme === 'cad-classic') {
-          const redMat = new THREE.MeshStandardMaterial({
-            color: '#ef0000',
-            roughness: 0.48,
-            metalness: 0.05,
-          });
-          const blueMat = new THREE.MeshStandardMaterial({
-            color: '#0018f9',
-            roughness: 0.48,
-            metalness: 0.05,
-          });
-          const whiteMat = new THREE.MeshStandardMaterial({
-            color: '#ffffff',
-            roughness: 0.4,
-            metalness: 0.02,
-          });
+        const primaryMat = new THREE.MeshStandardMaterial({
+          color: colPrimary,
+          roughness: 0.45,
+          metalness: 0.06,
+        });
+        const secondaryMat = new THREE.MeshStandardMaterial({
+          color: colSecondary,
+          roughness: 0.45,
+          metalness: 0.06,
+        });
+        const topMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(colPrimary).lerp(new THREE.Color('#ffffff'), 0.65),
+          roughness: 0.38,
+          metalness: 0.03,
+        });
 
-          const isWidthLonger = item.width >= item.depth;
-          const xFaceMat = isWidthLonger ? blueMat : redMat;
-          const zFaceMat = isWidthLonger ? redMat : blueMat;
+        const isWidthLonger = item.width >= item.depth;
+        const xFaceMat = isWidthLonger ? secondaryMat : primaryMat;
+        const zFaceMat = isWidthLonger ? primaryMat : secondaryMat;
 
-          materials = [xFaceMat, xFaceMat, whiteMat, whiteMat, zFaceMat, zFaceMat];
-        } else if (viewer.colorTheme === 'layer-vivid') {
-          const layerColor = LAYER_PALETTE[placed.layer % LAYER_PALETTE.length];
-          const sideMat = new THREE.MeshStandardMaterial({
-            color: layerColor,
-            roughness: 0.42,
-            metalness: 0.08,
-          });
-          const topColor = new THREE.Color(layerColor).lerp(new THREE.Color('#ffffff'), 0.25);
-          const topMat = new THREE.MeshStandardMaterial({
-            color: topColor,
-            roughness: 0.35,
-            metalness: 0.05,
-          });
-          materials = [sideMat, sideMat, topMat, sideMat, sideMat, sideMat];
-        } else if (viewer.colorTheme === 'kraft') {
-          const kraftBase = placed.layer % 2 === 0 ? '#c89b6e' : '#b8895c';
-          const sideMat = new THREE.MeshStandardMaterial({
-            color: kraftBase,
-            roughness: 0.78,
-            metalness: 0.02,
-          });
-          const topMat = new THREE.MeshStandardMaterial({
-            color: '#d5aa7f',
-            roughness: 0.75,
-            metalness: 0.02,
-          });
-          materials = [sideMat, sideMat, topMat, sideMat, sideMat, sideMat];
-        } else {
-          const colA = viewer.colorTheme === 'carton-can' ? '#5b84b1' : item.customColor;
-          const colB = viewer.colorTheme === 'carton-can' ? '#9ab8d9' : item.secondaryColor;
-          const matA = new THREE.MeshStandardMaterial({
-            color: colA,
-            roughness: 0.42,
-            metalness: 0.1,
-          });
-          const matB = new THREE.MeshStandardMaterial({
-            color: colB,
-            roughness: 0.42,
-            metalness: 0.1,
-          });
-          const matTop = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(colA).lerp(new THREE.Color('#ffffff'), 0.35),
-            roughness: 0.35,
-            metalness: 0.05,
-          });
-          materials = [matB, matB, matTop, matB, matA, matA];
-        }
+        const materials: THREE.Material[] = [
+          xFaceMat,
+          xFaceMat,
+          topMat,
+          topMat,
+          zFaceMat,
+          zFaceMat,
+        ];
 
         const boxMesh = new THREE.Mesh(boxGeo, materials);
         boxMesh.rotation.y = placed.rotationY;
         boxMesh.castShadow = !isSoftwareGl;
         boxMesh.receiveShadow = true;
         itemGroup.add(boxMesh);
-
-        if (viewer.colorTheme === 'kraft') {
-          const tapeGeo = new THREE.PlaneGeometry(localW * 0.98, Math.min(localD * 0.18, 0.45));
-          const tapeMat = new THREE.MeshStandardMaterial({
-            color: '#e6ccb2',
-            roughness: 0.4,
-            polygonOffset: true,
-            polygonOffsetFactor: -1,
-            polygonOffsetUnits: -1,
-          });
-          const tapeMesh = new THREE.Mesh(tapeGeo, tapeMat);
-          tapeMesh.rotation.x = -Math.PI / 2;
-          tapeMesh.rotation.z = placed.rotationY;
-          tapeMesh.position.y = localH / 2 + 0.002;
-          itemGroup.add(tapeMesh);
-        }
 
         // If out of bounds and overhang visualization is enabled, overlay a semi-transparent red warning shell on the item
         const showOverhang = viewer.showSpaceAnalysis && viewer.showOverhang;
@@ -921,18 +898,8 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
         const radius = Math.max(0.02, ((item.diameter - 1.0) / 2) * SCALE);
         const cylH = Math.max(0.02, (item.height - 1.0) * SCALE);
 
-        let bodyHex = '#5b84b1';
-        let capHex = '#9ab8d9';
-        if (viewer.colorTheme === 'layer-vivid') {
-          bodyHex = LAYER_PALETTE[placed.layer % LAYER_PALETTE.length];
-          capHex = '#' + new THREE.Color(bodyHex).lerp(new THREE.Color('#ffffff'), 0.4).getHexString();
-        } else if (viewer.colorTheme === 'custom') {
-          bodyHex = item.customColor;
-          capHex = item.secondaryColor;
-        } else if (viewer.colorTheme === 'kraft') {
-          bodyHex = '#94a3b8';
-          capHex = '#cbd5e1';
-        }
+        const bodyHex = item.customColor || '#5b84b1';
+        const capHex = item.secondaryColor || '#9ab8d9';
 
         const bodyMat = new THREE.MeshStandardMaterial({
           color: bodyHex,
@@ -1012,10 +979,8 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
         const outerGeo = new THREE.BoxGeometry(contW, boxEnvelopeH, contD);
 
         if (viewer.showOuterBox) {
-          const outerWallColor =
-            viewer.colorTheme === 'carton-can' ? '#fef9c3' : '#e2e8f0';
           const outerMat = new THREE.MeshPhysicalMaterial({
-            color: outerWallColor,
+            color: '#fef9c3',
             transparent: true,
             opacity: viewer.outerBoxOpacity,
             roughness: 0.2,
@@ -1054,10 +1019,8 @@ export const PackingCanvas3D: React.FC<PackingCanvas3DProps> = ({
         const calcBoxCenterY = palletH + stackH / 2;
 
         if (viewer.sizeDisplayMode === 'calculated' && viewer.showOuterBox) {
-          const outerWallColor =
-            viewer.colorTheme === 'carton-can' ? '#e0f2fe' : '#e2e8f0';
           const outerMat = new THREE.MeshPhysicalMaterial({
-            color: outerWallColor,
+            color: '#e0f2fe',
             transparent: true,
             opacity: viewer.outerBoxOpacity,
             roughness: 0.2,
